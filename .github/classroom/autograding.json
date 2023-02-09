@@ -1,0 +1,74 @@
+{
+  "tests": [
+    {
+      "name": "Test ls command",
+      "setup": "",
+      "run": "make test_ls",
+      "input": "",
+      "output": "",
+      "comparison": "included",
+      "timeout": 10,
+      "points": 10
+    },
+    {
+      "name": "Test cd command",
+      "setup": "",
+      "run": "make test_cd",
+      "input": "",
+      "output": "",
+      "comparison": "included",
+      "timeout": 10,
+      "points": 20
+    },
+    {
+      "name": "Test cp command",
+      "setup": "",
+      "run": "make test_cp",
+      "input": "",
+      "output": "",
+      "comparison": "included",
+      "timeout": 10,
+      "points": 10
+    },
+    {
+      "name": "Test paths",
+      "setup": "",
+      "run": "make test_paths",
+      "input": "",
+      "output": "",
+      "comparison": "included",
+      "timeout": 10,
+      "points": 30
+    },
+    {
+      "name": "Test exit",
+      "setup": "",
+      "run": "make test_exit",
+      "input": "",
+      "output": "",
+      "comparison": "included",
+      "timeout": 10,
+      "points": 5
+    },
+    {
+      "name": "Test quit",
+      "setup": "",
+      "run": "make test_quit",
+      "input": "",
+      "output": "",
+      "comparison": "included",
+      "timeout": 10,
+      "points": 5
+    },
+    {
+      "name": "Test blank",
+      "setup": "",
+      "run": "make test_blank",
+      "input": "",
+      "output": "",
+      "comparison": "included",
+      "timeout": 10,
+      "points": 10
+    }
+  ]
+}
