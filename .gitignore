@@ -1,3 +1,4 @@
 *.out
 mfs
 msh
+.vscode/
