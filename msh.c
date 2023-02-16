@@ -96,9 +96,41 @@ void parse_tokens(const char *command_string)
 
 void run_external()
 {
+    pid_t pid = fork();
+
+    if (pid == -1)
+    {
+        perror("fork: fatal error");
+        exit(EXIT_FAILURE);
+    }
+    if (pid == 0)
+    {
+        execvp(token[0], token);
+
+        /* Execution will get here only if failed */
+
+        // If command not found, print that, else print the specific error
+        if (errno == ENOENT)
+        {
+            fprintf(stderr, "%s: Command not found\n", token[0]);
+        }
+        else
+        {
+            perror(token[0]);
+        }
+
+        // If you don't exit you will basically have two shells now lol
+        exit(EXIT_FAILURE);
+    }
+    else
+    {
+        // You can check the status of the child here for some fancy stuff
+        int status;
+        waitpid(pid, &status, 0);
+    }
 }
 
-void run_command_string(char *command_string)
+void run_command_string(char *command_string, int add_to_history)
 {
     const char *cmd = token[0];
 
@@ -115,7 +147,7 @@ void run_command_string(char *command_string)
                 // This parses the history line into the global variable `token`
                 parse_tokens(history[hist_ptr]);
 
-                run_command_string(history[hist_ptr]);
+                run_command_string(history[hist_ptr], 0);
             }
         }
         else
@@ -135,32 +167,35 @@ void run_command_string(char *command_string)
                 // This parses the history line into the global variable `token`
                 parse_tokens(history[hist]);
 
-                run_command_string(history[hist]);
+                run_command_string(history[hist], hist != hist_ptr);
             }
         }
     }
     else
     {
         // Add command to the history
-        hist_ptr += 1;
-        if (hist_ptr == HISTORY_SIZE)
+        if (add_to_history)
         {
-            hist_ptr = 0;
-        }
+            hist_ptr += 1;
+            if (hist_ptr == HISTORY_SIZE)
+            {
+                hist_ptr = 0;
+            }
 
-        if (history[hist_ptr] != NULL)
-        {
-            free(history[hist_ptr]);
+            if (history[hist_ptr] != NULL)
+            {
+                free(history[hist_ptr]);
+            }
+            history[hist_ptr] = strdup(command_string);
         }
-        history[hist_ptr] = strdup(command_string);
 
         if (!strcmp(cmd, "history"))
         {
-            int showpids = 0;
-            if (token[1] != NULL && !strcmp(token[1], "-p"))
-            {
-                showpids = 1;
-            }
+            // int showpids = 0;
+            // if (token[1] != NULL && !strcmp(token[1], "-p"))
+            // {
+            //     showpids = 1;
+            // }
 
             // \todo: add showpid functionality
 
@@ -206,7 +241,7 @@ void run_command_string(char *command_string)
 
             if (err == -1)
             {
-                fprintf(stderr, "%s: %s\n", cmd, strerror(errno));
+                fprintf(stderr, "cd: %s\n", strerror(errno));
             }
         }
         else
@@ -252,7 +287,7 @@ int main()
             break;
         }
 
-        run_command_string(command_string);
+        run_command_string(command_string, 1);
     }
 
     free(command_string);
