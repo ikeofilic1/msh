@@ -112,7 +112,7 @@ void run_external()
         // If command not found, print that, else print the specific error
         if (errno == ENOENT)
         {
-            fprintf(stderr, "%s: Command not found\n", token[0]);
+            fprintf(stderr, "%s: Command not found.\n", token[0]);
         }
         else
         {
