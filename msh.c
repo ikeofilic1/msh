@@ -1,6 +1,6 @@
 // The MIT License (MIT)
 //
-// Copyright (c) 2016 Trevor Bakker
+// Copyright (c) 2023 Ikechukwu Ofili
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -38,7 +38,7 @@
 
 #define MAX_COMMAND_SIZE 255 // The maximum command-line size
 
-#define MAX_NUM_ARGUMENTS 5 // Mav shell only supports four arguments
+#define MAX_NUM_ARGUMENTS 10 // Mav shell only supports four arguments
 
 char *token[MAX_NUM_ARGUMENTS + 1];
 
