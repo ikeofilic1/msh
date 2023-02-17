@@ -130,13 +130,27 @@ void run_external()
     }
 }
 
-void run_command_string(char *command_string, int add_to_history)
+// \todo: remove all global variables
+void parse_and_run_command_string(char *command_string)
 {
+    /* Parse input */
+    parse_tokens(command_string);
+
     const char *cmd = token[0];
+
+    // Might change to a return -1 so main can manage its own memory
+    if (!strcmp(cmd, "quit") || !strcmp(cmd, "exit"))
+    {
+        free(command_string);
+        free_array(token, MAX_NUM_ARGUMENTS);
+        free_array(history, HISTORY_SIZE);
+
+        exit(EXIT_SUCCESS);
+    }
 
     if (*cmd == '!')
     {
-        if (cmd[1] == '!')
+        if (*(cmd + 1) == '!')
         {
             if (hist_ptr == -1)
             {
@@ -144,10 +158,8 @@ void run_command_string(char *command_string, int add_to_history)
             }
             else
             {
-                // This parses the history line into the global variable `token`
-                parse_tokens(history[hist_ptr]);
-
-                run_command_string(history[hist_ptr], 0);
+                // Run the last run command
+                parse_and_run_command_string(history[hist_ptr]);
             }
         }
         else
@@ -164,30 +176,26 @@ void run_command_string(char *command_string, int add_to_history)
             }
             else
             {
-                // This parses the history line into the global variable `token`
-                parse_tokens(history[hist]);
-
-                run_command_string(history[hist], hist != hist_ptr);
+                // Run the command at the specified history number
+                parse_and_run_command_string(history[hist]);
             }
         }
     }
     else
     {
-        // Add command to the history
-        if (add_to_history)
-        {
-            hist_ptr += 1;
-            if (hist_ptr == HISTORY_SIZE)
-            {
-                hist_ptr = 0;
-            }
+        // Add command to the history if it is not a `!` command
 
-            if (history[hist_ptr] != NULL)
-            {
-                free(history[hist_ptr]);
-            }
-            history[hist_ptr] = strdup(command_string);
+        hist_ptr += 1;
+        if (hist_ptr == HISTORY_SIZE)
+        {
+            hist_ptr = 0;
         }
+
+        if (history[hist_ptr] != NULL)
+        {
+            free(history[hist_ptr]);
+        }
+        history[hist_ptr] = strdup(command_string);
 
         if (!strcmp(cmd, "history"))
         {
@@ -231,13 +239,17 @@ void run_command_string(char *command_string, int add_to_history)
                 return;
             }
 
-            if (token[1] == NULL)
+            char *dir = token[1];
+
+            if (dir == NULL)
             {
-                fprintf(stderr, "Too few args for cd command\n");
-                return;
+                // Try to cd to the user's home directory
+                // There is a better way to get home directory but if bash
+                // uses this, who am I to not do the same
+                dir = getenv("HOME");
             }
 
-            int err = chdir(token[1]);
+            int err = chdir(dir);
 
             if (err == -1)
             {
@@ -277,23 +289,9 @@ int main()
             continue;
         }
 
-        /* Parse input */
-        parse_tokens(command_string);
-
-        const char *cmd = token[0];
-
-        if (!strcmp(cmd, "quit") || !strcmp(cmd, "exit"))
-        {
-            break;
-        }
-
-        run_command_string(command_string, 1);
+        // If line is not blank, parse it, and run the parsed command
+        parse_and_run_command_string(command_string);
     }
-
-    free(command_string);
-
-    free_array(token, MAX_NUM_ARGUMENTS);
-    free_array(history, HISTORY_SIZE);
 
     return 0;
 }
