@@ -24,6 +24,7 @@
 #define _GNU_SOURCE
 
 #include <stdio.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #include <stdlib.h>
@@ -40,13 +41,22 @@
 
 #define MAX_NUM_ARGUMENTS 10 // Mav shell only supports four arguments
 
+#define HISTORY_SIZE 15
+
 char *token[MAX_NUM_ARGUMENTS + 1];
 
-#define HISTORY_SIZE 15
-char *history[HISTORY_SIZE] = {NULL};
-
-// Points to the most recent command. Starts off as -1
+// Points to the most recent command in history. Starts off as -1
 int hist_ptr = -1;
+// PID of this shell invocation
+const pid_t mypid;
+
+struct command
+{
+    char *cmd;
+    pid_t pid;
+};
+
+char *history[HISTORY_SIZE] = {NULL};
 
 void free_array(char **arr, size_t size)
 {
@@ -67,7 +77,6 @@ void parse_tokens(const char *command_string)
     free_array(token, MAX_NUM_ARGUMENTS);
 
     int token_count = 0;
-
     // Pointer to point to the token parsed by strsep
     char *argument_ptr = NULL;
 
@@ -94,6 +103,7 @@ void parse_tokens(const char *command_string)
     free(head_ptr);
 }
 
+// Returns the pid of the child process that was spawned
 void run_external()
 {
     pid_t pid = fork();
@@ -111,13 +121,9 @@ void run_external()
 
         // If command not found, print that, else print the specific error
         if (errno == ENOENT)
-        {
             fprintf(stderr, "%s: Command not found.\n", token[0]);
-        }
         else
-        {
             perror(token[0]);
-        }
 
         // If you don't exit you will basically have two shells now lol
         exit(EXIT_FAILURE);
@@ -138,13 +144,58 @@ void my_exit()
     exit(EXIT_SUCCESS);
 }
 
-// \todo: remove all global variables
+void print_history(bool showpid)
+{
+    // If the pointer is at the last element in the list or the list
+    // isn't full yet, print the history from the first element to the
+    // current one pointed by `hist_ptr`
+    if (showpid)
+    {
+        if (hist_ptr == HISTORY_SIZE - 1 || history[hist_ptr + 1] == NULL)
+        {
+            for (int i = 0; i <= hist_ptr; ++i)
+                printf("%2d. [] %s", i, history[i]);
+        }
+        // else, we print the history from the current one, then loop around
+        // the list
+        else
+        {
+            for (int i = hist_ptr + 1, j = 0; j < HISTORY_SIZE; ++i, ++j)
+            {
+                if (i == HISTORY_SIZE)
+                    i = 0;
+                printf("%2d. [] %s", j, history[i]);
+            }
+        }
+    }
+    else
+    {
+        if (hist_ptr == HISTORY_SIZE - 1 || history[hist_ptr + 1] == NULL)
+        {
+            for (int i = 0; i <= hist_ptr; ++i)
+                printf("%2d. %s", i, history[i]);
+        }
+        // else, we print the history from the current one, then loop around
+        // the list
+        else
+        {
+            for (int i = hist_ptr + 1, j = 0; j < HISTORY_SIZE; ++i, ++j)
+            {
+                if (i == HISTORY_SIZE)
+                    i = 0;
+                printf("%2d. %s", j, history[i]);
+            }
+        }
+    }
+}
+
 void parse_and_run_command_string(char *command_string)
 {
     /* Parse input */
     parse_tokens(command_string);
 
     const char *cmd = token[0];
+
     // Quit if command is 'quit' or 'exit'
     if (!strcmp(cmd, "quit") || !strcmp(cmd, "exit"))
     {
@@ -158,7 +209,7 @@ void parse_and_run_command_string(char *command_string)
             if (hist_ptr == -1)
                 puts("Command not in history");
             else
-                // Run the last run command
+                // Run the most recent command
                 parse_and_run_command_string(history[hist_ptr]);
         }
         else
@@ -166,13 +217,22 @@ void parse_and_run_command_string(char *command_string)
             char *endp;
             unsigned long hist = strtoul(cmd + 1, &endp, 10);
 
+            // If something that is not a digit is found, or `n` is out of
+            // bounds, that is an invalid command and we report this
             if (*endp != '\0' || hist >= HISTORY_SIZE)
             {
                 fprintf(stderr, "Invalid reference: %s\n", cmd + 1);
                 return;
             }
 
-            // Do some math to calculate the real index
+            /* Do some math to calculate the real index */
+
+            // hist_ptr always points to the end of the list so hist_ptr + 1 is
+            // actually the first command in history. Offset that number by
+            // hist and we got our real history index.
+            // **NOTE** we don't need to do that if hist_ptr points to the
+            // bottom of the history array or the history array has less than
+            // HISTORY_SIZE elements
             if (hist_ptr != HISTORY_SIZE - 1 && history[hist_ptr + 1] != NULL)
             {
                 hist = hist + hist_ptr + 1;
@@ -181,9 +241,6 @@ void parse_and_run_command_string(char *command_string)
                     hist -= HISTORY_SIZE;
             }
 
-            // If something that is not a digit is found, or `n` is out of
-            // bounds, or there isn't any history there yet,
-            // then it is an invalid command
             if (history[hist] == NULL)
                 fputs("Command not in history\n", stderr);
             else
@@ -192,16 +249,15 @@ void parse_and_run_command_string(char *command_string)
         }
     else
     {
-        // Add command to the history if it is not a `!` command
+        /* Add command to the history if it is not a `!` command */
 
         hist_ptr += 1;
         if (hist_ptr == HISTORY_SIZE)
             hist_ptr = 0;
 
-        // Save the previous cmd so we can delete it. We can't delete it now
-        // because it might be the same string pointed to by `command_string`
+        // Save the previous cmd so we can delete it later. We can't delete it
+        // now because it might be the same string pointed to by command_string
         char *prev = history[hist_ptr];
-
         history[hist_ptr] = strdup(command_string);
 
         // We have wrapped around so we free the history that used to be here
@@ -210,34 +266,8 @@ void parse_and_run_command_string(char *command_string)
 
         if (!strcmp(cmd, "history"))
         {
-            // int showpids = 0;
-            // if (token[1] != NULL && !strcmp(token[1], "-p"))
-            // {
-            //     showpids = 1;
-            // }
-
-            // \todo: add showpid functionality
-
-            // If the pointer is at the last element in the list or the list
-            // isn't full yet, print the history from the first element to the
-            // current one pointed by `hist_ptr`
-
-            if (hist_ptr == HISTORY_SIZE - 1 || history[hist_ptr + 1] == NULL)
-            {
-                for (int i = 0; i <= hist_ptr; ++i)
-                    printf("%2d. %s", i, history[i]);
-            }
-            // else, we print the history from the current one, then loop around
-            // the list
-            else
-            {
-                for (int i = hist_ptr + 1, j = 0; j < HISTORY_SIZE; ++i, ++j)
-                {
-                    if (i == HISTORY_SIZE)
-                        i = 0;
-                    printf("%2d. %s", j, history[i]);
-                }
-            }
+            // Print the history, pass if you want to show the pids or not
+            print_history(token[1] != NULL && !strcmp(token[1], "-p"));
         }
         else if (!strcmp(cmd, "cd"))
         {
@@ -248,21 +278,17 @@ void parse_and_run_command_string(char *command_string)
             }
 
             char *dir = token[1];
-
             if (dir == NULL)
             {
                 // Try to cd to the user's home directory
-                // There is a better way to get home directory but if bash
-                // uses this, who am I to not do the same
+                // There is a better way to get home directory but if some major
+                // shells use this, who am I to not do the same
                 dir = getenv("HOME");
             }
 
             int err = chdir(dir);
-
             if (err == -1)
-            {
                 fprintf(stderr, "cd: %s\n", strerror(errno));
-            }
         }
         else
         {
