@@ -130,6 +130,14 @@ void run_external()
     }
 }
 
+void my_exit()
+{
+    free_array(token, MAX_NUM_ARGUMENTS);
+    free_array(history, HISTORY_SIZE);
+
+    exit(EXIT_SUCCESS);
+}
+
 // \todo: remove all global variables
 void parse_and_run_command_string(char *command_string)
 {
@@ -137,65 +145,68 @@ void parse_and_run_command_string(char *command_string)
     parse_tokens(command_string);
 
     const char *cmd = token[0];
-
-    // Might change to a return -1 so main can manage its own memory
+    // Quit if command is 'quit' or 'exit'
     if (!strcmp(cmd, "quit") || !strcmp(cmd, "exit"))
     {
         free(command_string);
-        free_array(token, MAX_NUM_ARGUMENTS);
-        free_array(history, HISTORY_SIZE);
-
-        exit(EXIT_SUCCESS);
+        my_exit();
     }
 
     if (*cmd == '!')
-    {
         if (*(cmd + 1) == '!')
         {
             if (hist_ptr == -1)
-            {
                 puts("Command not in history");
-            }
             else
-            {
                 // Run the last run command
                 parse_and_run_command_string(history[hist_ptr]);
-            }
         }
         else
         {
             char *endp;
             unsigned long hist = strtoul(cmd + 1, &endp, 10);
 
+            if (*endp != '\0' || hist >= HISTORY_SIZE)
+            {
+                fprintf(stderr, "Invalid reference: %s\n", cmd + 1);
+                return;
+            }
+
+            // Do some math to calculate the real index
+            if (hist_ptr != HISTORY_SIZE - 1 && history[hist_ptr + 1] != NULL)
+            {
+                hist = hist + hist_ptr + 1;
+
+                if (hist >= HISTORY_SIZE)
+                    hist -= HISTORY_SIZE;
+            }
+
             // If something that is not a digit is found, or `n` is out of
             // bounds, or there isn't any history there yet,
-            // That is an invalid command
-            if (*endp != '\0' || hist >= HISTORY_SIZE || history[hist] == NULL)
-            {
-                puts("Command not in history");
-            }
+            // then it is an invalid command
+            if (history[hist] == NULL)
+                fputs("Command not in history\n", stderr);
             else
-            {
                 // Run the command at the specified history number
                 parse_and_run_command_string(history[hist]);
-            }
         }
-    }
     else
     {
         // Add command to the history if it is not a `!` command
 
         hist_ptr += 1;
         if (hist_ptr == HISTORY_SIZE)
-        {
             hist_ptr = 0;
-        }
 
-        if (history[hist_ptr] != NULL)
-        {
-            free(history[hist_ptr]);
-        }
+        // Save the previous cmd so we can delete it. We can't delete it now
+        // because it might be the same string pointed to by `command_string`
+        char *prev = history[hist_ptr];
+
         history[hist_ptr] = strdup(command_string);
+
+        // We have wrapped around so we free the history that used to be here
+        if (prev != NULL)
+            free(prev);
 
         if (!strcmp(cmd, "history"))
         {
@@ -210,12 +221,11 @@ void parse_and_run_command_string(char *command_string)
             // If the pointer is at the last element in the list or the list
             // isn't full yet, print the history from the first element to the
             // current one pointed by `hist_ptr`
+
             if (hist_ptr == HISTORY_SIZE - 1 || history[hist_ptr + 1] == NULL)
             {
                 for (int i = 0; i <= hist_ptr; ++i)
-                {
-                    printf("%d: %s", i, history[i]);
-                }
+                    printf("%2d. %s", i, history[i]);
             }
             // else, we print the history from the current one, then loop around
             // the list
@@ -224,10 +234,8 @@ void parse_and_run_command_string(char *command_string)
                 for (int i = hist_ptr + 1, j = 0; j < HISTORY_SIZE; ++i, ++j)
                 {
                     if (i == HISTORY_SIZE)
-                    {
                         i = 0;
-                    }
-                    printf("%d: %s", j, history[i]);
+                    printf("%2d. %s", j, history[i]);
                 }
             }
         }
