@@ -47,8 +47,9 @@ char *token[MAX_NUM_ARGUMENTS + 1];
 
 // Points to the most recent command in history. Starts off as -1
 int hist_ptr = -1;
+
 // PID of this shell invocation
-const pid_t mypid;
+pid_t mypid;
 
 struct command
 {
@@ -56,7 +57,13 @@ struct command
     pid_t pid;
 };
 
-char *history[HISTORY_SIZE] = {NULL};
+struct command *history[HISTORY_SIZE] = {NULL};
+
+void free_struct_cmd(struct command *p)
+{
+    free(p->cmd);
+    free(p);
+}
 
 void free_array(char **arr, size_t size)
 {
@@ -104,7 +111,7 @@ void parse_tokens(const char *command_string)
 }
 
 // Returns the pid of the child process that was spawned
-void run_external()
+pid_t run_external()
 {
     pid_t pid = fork();
 
@@ -134,12 +141,17 @@ void run_external()
         int status;
         waitpid(pid, &status, 0);
     }
+
+    return pid;
 }
 
 void my_exit()
 {
     free_array(token, MAX_NUM_ARGUMENTS);
-    free_array(history, HISTORY_SIZE);
+
+    for (uint i = 0; i < HISTORY_SIZE; ++i)
+        if (history[i] != NULL)
+            free_struct_cmd(history[i]);
 
     exit(EXIT_SUCCESS);
 }
@@ -154,7 +166,7 @@ void print_history(bool showpid)
         if (hist_ptr == HISTORY_SIZE - 1 || history[hist_ptr + 1] == NULL)
         {
             for (int i = 0; i <= hist_ptr; ++i)
-                printf("%2d. [] %s", i, history[i]);
+                printf("[%2d] [%d] %s", i, history[i]->pid, history[i]->cmd);
         }
         // else, we print the history from the current one, then loop around
         // the list
@@ -164,7 +176,7 @@ void print_history(bool showpid)
             {
                 if (i == HISTORY_SIZE)
                     i = 0;
-                printf("%2d. [] %s", j, history[i]);
+                printf("[%2d] [%d] %s", j, history[i]->pid, history[i]->cmd);
             }
         }
     }
@@ -173,7 +185,7 @@ void print_history(bool showpid)
         if (hist_ptr == HISTORY_SIZE - 1 || history[hist_ptr + 1] == NULL)
         {
             for (int i = 0; i <= hist_ptr; ++i)
-                printf("%2d. %s", i, history[i]);
+                printf("[%2d] %s", i, history[i]->cmd);
         }
         // else, we print the history from the current one, then loop around
         // the list
@@ -183,7 +195,7 @@ void print_history(bool showpid)
             {
                 if (i == HISTORY_SIZE)
                     i = 0;
-                printf("%2d. %s", j, history[i]);
+                printf("[%2d]. %s", j, history[i]->cmd);
             }
         }
     }
@@ -210,7 +222,7 @@ void parse_and_run_command_string(char *command_string)
                 puts("Command not in history");
             else
                 // Run the most recent command
-                parse_and_run_command_string(history[hist_ptr]);
+                parse_and_run_command_string(history[hist_ptr]->cmd);
         }
         else
         {
@@ -245,7 +257,7 @@ void parse_and_run_command_string(char *command_string)
                 fputs("Command not in history\n", stderr);
             else
                 // Run the command at the specified history number
-                parse_and_run_command_string(history[hist]);
+                parse_and_run_command_string(history[hist]->cmd);
         }
     else
     {
@@ -257,12 +269,17 @@ void parse_and_run_command_string(char *command_string)
 
         // Save the previous cmd so we can delete it later. We can't delete it
         // now because it might be the same string pointed to by command_string
-        char *prev = history[hist_ptr];
-        history[hist_ptr] = strdup(command_string);
+        struct command *prev = history[hist_ptr];
+        history[hist_ptr] = malloc(sizeof(struct command));
+
+        history[hist_ptr]->cmd = strdup(command_string);
+
+        // Do this in case history needs to see its own pid
+        history[hist_ptr]->pid = -1;
 
         // We have wrapped around so we free the history that used to be here
         if (prev != NULL)
-            free(prev);
+            free_struct_cmd(prev);
 
         if (!strcmp(cmd, "history"))
         {
@@ -280,7 +297,8 @@ void parse_and_run_command_string(char *command_string)
             char *dir = token[1];
             if (dir == NULL)
             {
-                // Try to cd to the user's home directory
+                // Try to cd to the user's home directory. We do this through
+                // the environment variable "HOME"
                 // There is a better way to get home directory but if some major
                 // shells use this, who am I to not do the same
                 dir = getenv("HOME");
@@ -292,14 +310,15 @@ void parse_and_run_command_string(char *command_string)
         }
         else
         {
-            run_external();
+            history[hist_ptr]->pid = run_external();
         }
     }
 }
 
 int main()
 {
-    // This will never not be true. execvp needs the last element to be NULL
+    // This will never not be true. execvp needs the arguments to be
+    // delimited by NULL
     token[MAX_NUM_ARGUMENTS] = NULL;
 
     char *command_string = (char *)malloc(MAX_COMMAND_SIZE);
