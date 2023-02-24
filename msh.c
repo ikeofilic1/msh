@@ -48,9 +48,6 @@ char *token[MAX_NUM_ARGUMENTS + 1];
 // Points to the most recent command in history. Starts off as -1
 int hist_ptr = -1;
 
-// PID of this shell invocation
-pid_t mypid;
-
 struct command
 {
     char *cmd;
