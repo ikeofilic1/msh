@@ -48,9 +48,6 @@ char *token[MAX_NUM_ARGUMENTS + 1];
 // Points to the most recent command in history. Starts off as -1
 int hist_ptr = -1;
 
-// PID of this shell invocation
-pid_t mypid;
-
 struct command
 {
     char *cmd;
@@ -72,7 +69,6 @@ void free_array(char **arr, size_t size)
         if (arr[i] != NULL)
         {
             free(arr[i]);
-            arr[i] = NULL;
         }
     }
 }
@@ -106,6 +102,11 @@ void parse_tokens(const char *command_string)
         }
         token_count++;
     }
+
+    for (; token_count < MAX_NUM_ARGUMENTS; ++token_count)
+    {
+        token[token_count] = NULL;
+    }    
 
     free(head_ptr);
 }
@@ -195,7 +196,7 @@ void print_history(bool showpid)
             {
                 if (i == HISTORY_SIZE)
                     i = 0;
-                printf("[%2d]. %s", j, history[i]->cmd);
+                printf("[%2d] %s", j, history[i]->cmd);
             }
         }
     }
@@ -317,10 +318,6 @@ void parse_and_run_command_string(char *command_string)
 
 int main()
 {
-    // This will never not be true. execvp needs the arguments to be
-    // delimited by NULL
-    token[MAX_NUM_ARGUMENTS] = NULL;
-
     char *command_string = (char *)malloc(MAX_COMMAND_SIZE);
 
     while (1)
