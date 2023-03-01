@@ -54,13 +54,8 @@ struct command
     pid_t pid;
 };
 
-struct command *history[HISTORY_SIZE] = {NULL};
-
-void free_struct_cmd(struct command *p)
-{
-    free(p->cmd);
-    free(p);
-}
+// Zero-initialized
+struct command history[HISTORY_SIZE] = {0};
 
 void free_array(char **arr, size_t size)
 {
@@ -103,6 +98,9 @@ void parse_tokens(const char *command_string)
         token_count++;
     }
 
+    // Set all args from the last arg parsed to the end of the token array
+    // This helps so that I don't get a double free error if I run a cmd that
+    // has 7 args then run one that has 3 args then called free_array on token
     for (; token_count < MAX_NUM_ARGUMENTS; ++token_count)
     {
         token[token_count] = NULL;
@@ -118,6 +116,7 @@ pid_t run_external()
 
     if (pid == -1)
     {
+        // We can't really do anything but exit
         perror("fork: fatal error");
         exit(EXIT_FAILURE);
     }
@@ -143,31 +142,22 @@ pid_t run_external()
         waitpid(pid, &status, 0);
     }
 
+    //return the pid
     return pid;
-}
-
-void my_exit()
-{
-    free_array(token, MAX_NUM_ARGUMENTS);
-
-    for (uint i = 0; i < HISTORY_SIZE; ++i)
-        if (history[i] != NULL)
-            free_struct_cmd(history[i]);
-
-    exit(EXIT_SUCCESS);
 }
 
 void print_history(bool showpid)
 {
-    // If the pointer is at the last element in the list or the list
-    // isn't full yet, print the history from the first element to the
-    // current one pointed by `hist_ptr`
+    // Choose to showpid or not
     if (showpid)
     {
-        if (hist_ptr == HISTORY_SIZE - 1 || history[hist_ptr + 1] == NULL)
+        // If the pointer is at the last element in the list or the list
+        // isn't full yet, print the history from the first element to the
+        // current one pointed by `hist_ptr`
+        if (hist_ptr == HISTORY_SIZE - 1 || history[hist_ptr + 1].cmd == NULL)
         {
             for (int i = 0; i <= hist_ptr; ++i)
-                printf("[%2d] [%d] %s", i, history[i]->pid, history[i]->cmd);
+                printf("[%2d] [%d] %s", i, history[i].pid, history[i].cmd);
         }
         // else, we print the history from the current one, then loop around
         // the list
@@ -177,44 +167,33 @@ void print_history(bool showpid)
             {
                 if (i == HISTORY_SIZE)
                     i = 0;
-                printf("[%2d] [%d] %s", j, history[i]->pid, history[i]->cmd);
+                printf("[%2d] [%d] %s", j, history[i].pid, history[i].cmd);
             }
         }
     }
     else
     {
-        if (hist_ptr == HISTORY_SIZE - 1 || history[hist_ptr + 1] == NULL)
+        // Same logic as above
+        if (hist_ptr == HISTORY_SIZE - 1 || history[hist_ptr + 1].cmd == NULL)
         {
             for (int i = 0; i <= hist_ptr; ++i)
-                printf("[%2d] %s", i, history[i]->cmd);
+                printf("[%2d] %s", i, history[i].cmd);
         }
-        // else, we print the history from the current one, then loop around
-        // the list
         else
         {
             for (int i = hist_ptr + 1, j = 0; j < HISTORY_SIZE; ++i, ++j)
             {
                 if (i == HISTORY_SIZE)
                     i = 0;
-                printf("[%2d] %s", j, history[i]->cmd);
+                printf("[%2d] %s", j, history[i].cmd);
             }
         }
     }
 }
 
-void parse_and_run_command_string(char *command_string)
+void run_command_string(char *command_string)
 {
-    /* Parse input */
-    parse_tokens(command_string);
-
-    const char *cmd = token[0];
-
-    // Quit if command is 'quit' or 'exit'
-    if (!strcmp(cmd, "quit") || !strcmp(cmd, "exit"))
-    {
-        free(command_string);
-        my_exit();
-    }
+    char *cmd = token[0];
 
     if (*cmd == '!')
         if (*(cmd + 1) == '!')
@@ -222,8 +201,11 @@ void parse_and_run_command_string(char *command_string)
             if (hist_ptr == -1)
                 puts("Command not in history");
             else
+            {
                 // Run the most recent command
-                parse_and_run_command_string(history[hist_ptr]->cmd);
+                parse_tokens(history[hist_ptr].cmd);
+                run_command_string(history[hist_ptr].cmd);
+            }
         }
         else
         {
@@ -246,19 +228,23 @@ void parse_and_run_command_string(char *command_string)
             // **NOTE** we don't need to do that if hist_ptr points to the
             // bottom of the history array or the history array has less than
             // HISTORY_SIZE elements
-            if (hist_ptr != HISTORY_SIZE - 1 && history[hist_ptr + 1] != NULL)
+            if (hist_ptr != HISTORY_SIZE - 1 && history[hist_ptr + 1].cmd != NULL)
             {
+                printf("here!!\n");
                 hist = hist + hist_ptr + 1;
 
                 if (hist >= HISTORY_SIZE)
                     hist -= HISTORY_SIZE;
             }
-
-            if (history[hist] == NULL)
+            
+            if (history[hist].cmd == NULL)
                 fputs("Command not in history\n", stderr);
             else
+            {
                 // Run the command at the specified history number
-                parse_and_run_command_string(history[hist]->cmd);
+                parse_tokens(history[hist].cmd);
+                run_command_string(history[hist].cmd);
+            }
         }
     else
     {
@@ -270,17 +256,16 @@ void parse_and_run_command_string(char *command_string)
 
         // Save the previous cmd so we can delete it later. We can't delete it
         // now because it might be the same string pointed to by command_string
-        struct command *prev = history[hist_ptr];
-        history[hist_ptr] = malloc(sizeof(struct command));
+        char *prev = history[hist_ptr].cmd;
 
-        history[hist_ptr]->cmd = strdup(command_string);
+        history[hist_ptr].cmd = strdup(command_string);
 
         // Do this in case history needs to see its own pid
-        history[hist_ptr]->pid = -1;
+        history[hist_ptr].pid = -1;
 
         // We have wrapped around so we free the history that used to be here
         if (prev != NULL)
-            free_struct_cmd(prev);
+            free(prev);
 
         if (!strcmp(cmd, "history"))
         {
@@ -311,7 +296,7 @@ void parse_and_run_command_string(char *command_string)
         }
         else
         {
-            history[hist_ptr]->pid = run_external();
+            history[hist_ptr].pid = run_external();
         }
     }
 }
@@ -339,8 +324,27 @@ int main()
             continue;
         }
 
+        parse_tokens(command_string);
+
+        const char *cmd = token[0];
+
+        // Quit if command is 'quit' or 'exit'
+        if (!strcmp(cmd, "quit") || !strcmp(cmd, "exit"))
+        {
+            break;
+        }
+
         // If line is not blank, parse it, and run the parsed command
-        parse_and_run_command_string(command_string);
+        run_command_string(command_string);
+    }
+
+    free(command_string);
+    free_array(token, MAX_NUM_ARGUMENTS);
+
+    for (uint i = 0; i < HISTORY_SIZE; ++i)
+    {
+        if (history[i].cmd != NULL)
+            free(history[i].cmd);
     }
 
     return 0;
