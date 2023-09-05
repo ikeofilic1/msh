@@ -31,6 +31,8 @@
 #include <errno.h>
 #include <string.h>
 #include <signal.h>
+#include <pwd.h>
+#include <limits.h>
 
 #define WHITESPACE " \t\n" // We want to split our command line up into tokens
                            // so we need to define what delimits our tokens.
@@ -209,6 +211,8 @@ void run_command_string(char *command_string)
         }
         else
         {
+            if (*(cmd + 1) == '\0') return; //ignore '!'
+            
             char *endp;
             unsigned long hist = strtoul(cmd + 1, &endp, 10);
 
@@ -230,7 +234,6 @@ void run_command_string(char *command_string)
             // HISTORY_SIZE elements
             if (hist_ptr != HISTORY_SIZE - 1 && history[hist_ptr + 1].cmd != NULL)
             {
-                printf("here!!\n");
                 hist = hist + hist_ptr + 1;
 
                 if (hist >= HISTORY_SIZE)
@@ -301,14 +304,118 @@ void run_command_string(char *command_string)
     }
 }
 
+char *pwd()
+{
+    char *dir = getcwd(NULL, 0);
+
+    if (dir == NULL)
+    {
+        perror("Failed to get the current working directory");
+        return NULL;
+    }
+
+    return dir;
+}
+
+void get_home_and_uname(char **home, char **uname)
+{
+    errno = 0;
+    struct passwd *pwd = getpwuid(getuid());
+
+    if (pwd == NULL)
+    {
+        if (!errno)
+        {
+            // You don't exist for some reason
+            *home = "";
+            *uname = "user";
+        }
+        else
+        {
+            do
+            {
+                errno = 0;
+                pwd = getpwuid(getuid());
+        
+          // These types of errors might take a while to fix and I cannot wait
+            } while (pwd == NULL && errno != EIO && errno != ENOMEM);
+
+            if (pwd == NULL)
+            {
+                *home = "<error>";
+                *uname = "<error>";
+
+                perror("A fatal error occurred");
+            }
+        }
+    }
+
+   if (pwd != NULL)
+   {
+        *home = pwd->pw_dir;
+        *uname = pwd->pw_name;
+   }    
+}
+
+char *get_prompt()
+{
+    char *wd = pwd();
+
+    if (wd == NULL)
+        wd = "<nowhere>";
+
+    char *home, *uname;
+    get_home_and_uname(&home, &uname);
+    
+    int n = strlen(home);
+    if (!strncmp(home, wd, n))
+    {
+        *wd = '~';
+        memmove(wd + 1, wd + n, strlen(wd) - n + 1);
+    }
+
+    char hname[HOST_NAME_MAX + 1];
+    if (gethostname(hname, HOST_NAME_MAX) < 0)
+    {
+        *hname = '\0';
+    }
+
+    char *everything = malloc(strlen(uname) + 1 + strlen(hname) + 1 + strlen(wd) + 2);
+
+    n = 0;
+    strcpy(everything + n, uname);
+    n += strlen(uname);
+
+    if (*hname != '\0')
+    {
+        everything[n++] = '@';
+        strcpy(everything + n, hname);
+        n += strlen(hname);
+    }
+
+    everything[n++] = ':';
+    strcpy(everything + n, wd);
+    n += strlen(wd);
+
+    everything[n++] = strcmp(uname, "root") ? '$' : '#';
+    everything[n] = '\0';
+
+    free(wd);
+    return everything;
+}
+
 int main()
 {
     char *command_string = (char *)malloc(MAX_COMMAND_SIZE);
 
     while (1)
     {
-        // Print out the msh prompt
+#ifdef SCHOOL_MODE
+        // Print out the msh prompt for the class, else print regular shell prompt
         printf("msh> ");
+#else
+        printf("%s ", get_prompt());
+#endif
 
         // Read the command from the commandline.  The
         // maximum command that will be read is MAX_COMMAND_SIZE
